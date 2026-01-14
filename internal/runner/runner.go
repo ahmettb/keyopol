@@ -74,16 +74,32 @@ func Get() {
 		fmt.Println("Usage: keyopol get <Project> <Key>")
 		os.Exit(1)
 	}
-	proj, key := os.Args[2], os.Args[3]
+	projName, keyName := os.Args[2], os.Args[3]
 
 	db := store.InitDB()
 	defer db.Close()
 
 	var valEnc string
-	err := db.QueryRow("SELECT value FROM secrets WHERE project=? AND key=?", proj, key).Scan(&valEnc)
+
+	query := `
+        SELECT s.value 
+        FROM secrets s 
+        JOIN projects p ON s.project_id = p.id 
+        WHERE p.name = ? AND s.key = ?
+    `
+
+	err := db.QueryRow(query, projName, keyName).Scan(&valEnc)
 	if err != nil {
-		fmt.Println("[ERROR] Secret not found")
+		fmt.Printf("[ERROR] Secret not found: Project='%s', Key='%s'\n", projName, keyName)
 		os.Exit(1)
 	}
-	fmt.Print(crypto.Decrypt(valEnc, crypto.GetMasterKey()))
+
+	masterKey := crypto.GetMasterKey()
+	if masterKey == "" {
+		fmt.Println("[ERROR] Master Key not found (Set KEYOPOL_MASTER_KEY env var)")
+		os.Exit(1)
+	}
+
+	fmt.Print(crypto.Decrypt(valEnc, masterKey))
 }
+

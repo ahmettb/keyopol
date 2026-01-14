@@ -2,7 +2,11 @@ package store
 
 import (
 	"database/sql"
+	"fmt"
 	"keyopol-app/internal/crypto"
+	"log"
+	"os"
+	"path/filepath"
 
 	_ "modernc.org/sqlite"
 )
@@ -16,30 +20,47 @@ type Secret struct {
 }
 
 func InitDB() *sql.DB {
-	db, err := sql.Open("sqlite", "./secrets.db")
+	homeDir, err := os.UserHomeDir()
 	if err != nil {
-		panic(err)
+		log.Fatal("Ana dizin (Home Directory) bulunamadı:", err)
+	}
+
+	configDir := filepath.Join(homeDir, ".keyopol")
+
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		log.Fatal("Config klasörü oluşturulamadı:", err)
+	}
+
+	dbPath := filepath.Join(configDir, "secrets.db")
+
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		log.Fatal("Veritabanı açılamadı:", err)
 	}
 
 	createProjects := `
-	CREATE TABLE IF NOT EXISTS projects (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		name TEXT UNIQUE
-	);`
+    CREATE TABLE IF NOT EXISTS projects (
+       id INTEGER PRIMARY KEY AUTOINCREMENT,
+       name TEXT UNIQUE
+    );`
 
 	createSecrets := `
-	CREATE TABLE IF NOT EXISTS secrets (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		project_id INTEGER,
-		key TEXT,
-		value TEXT,
-		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-		FOREIGN KEY(project_id) REFERENCES projects(id)
-	);`
+    CREATE TABLE IF NOT EXISTS secrets (
+       id INTEGER PRIMARY KEY AUTOINCREMENT,
+       project_id INTEGER,
+       key TEXT,
+       value TEXT,
+       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+       FOREIGN KEY(project_id) REFERENCES projects(id) ON DELETE CASCADE
+    );`
 
-	db.Exec(createProjects)
-	db.Exec(createSecrets)
+	if _, err := db.Exec(createProjects); err != nil {
+		log.Fatal("Projects tablosu hatası:", err)
+	}
+	if _, err := db.Exec(createSecrets); err != nil {
+		log.Fatal("Secrets tablosu hatası:", err)
+	}
 
 	return db
 }
@@ -75,11 +96,11 @@ func DeleteProject(db *sql.DB, name string) {
 
 func GetSecrets(db *sql.DB, project, masterKey string) []Secret {
 	query := `
-	SELECT s.key, s.value, s.created_at, s.updated_at 
-	FROM secrets s 
-	JOIN projects p ON s.project_id = p.id 
-	WHERE p.name = ?
-	ORDER BY s.key`
+    SELECT s.key, s.value, s.created_at, s.updated_at 
+    FROM secrets s 
+    JOIN projects p ON s.project_id = p.id 
+    WHERE p.name = ?
+    ORDER BY s.key`
 
 	rows, err := db.Query(query, project)
 	if err != nil {
@@ -125,4 +146,26 @@ func UpdateSecret(db *sql.DB, project, key, newValue, masterKey string) {
 
 func DeleteSecret(db *sql.DB, project, key string) {
 	db.Exec(`DELETE FROM secrets WHERE key = ? AND project_id = (SELECT id FROM projects WHERE name = ?)`, key, project)
+}
+
+func GetSecretValue(db *sql.DB, projectName, secretKey, masterKey string) (string, error) {
+	var encryptedValue string
+
+	query := `
+    SELECT s.value 
+    FROM secrets s 
+    JOIN projects p ON s.project_id = p.id 
+    WHERE p.name = ? AND s.key = ?
+    LIMIT 1`
+
+	err := db.QueryRow(query, projectName, secretKey).Scan(&encryptedValue)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return "", fmt.Errorf("Secret not found: %s in project %s", secretKey, projectName)
+		}
+		return "", err
+	}
+
+	decryptedValue := crypto.Decrypt(encryptedValue, masterKey)
+	return decryptedValue, nil
 }

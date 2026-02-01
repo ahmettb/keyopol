@@ -8,5 +8,12 @@
       <jdbc-url>jdbc:sqlite:C:\Users\ahmet\.keyopol\secrets.db</jdbc-url>
       <working-dir>$ProjectFileDir$</working-dir>
     </data-source>
+    <data-source source="LOCAL" name="secrets.db" uuid="e0f1fe6d-4014-4f0a-8e45-4bf4b811ecf6">
+      <driver-ref>sqlite.xerial</driver-ref>
+      <synchronize>true</synchronize>
+      <jdbc-driver>org.sqlite.JDBC</jdbc-driver>
+      <jdbc-url>jdbc:sqlite:C:\Users\ahmet\.keyopol\secrets.db</jdbc-url>
+      <working-dir>$ProjectFileDir$</working-dir>
+    </data-source>
   </component>
 </project>

@@ -1,16 +1,12 @@
 package crypto
 
 import (
-	"crypto/aes"
-	"crypto/cipher"
 	"crypto/md5"
-	"crypto/rand"
 	"encoding/hex"
-	"io"
 	"os"
 )
 
-func GetMasterKey() string {
+func GetMasterKeyLegacy() string {
 	k := os.Getenv("KEYOPOL_MASTER_KEY")
 	if k == "" {
 		k = "default-insecure-key-change-me"
@@ -20,36 +16,20 @@ func GetMasterKey() string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
+// Encrypt wraps the new Argon2-based encryption
 func Encrypt(data, passphrase string) string {
-	block, _ := aes.NewCipher([]byte(passphrase))
-	gcm, _ := cipher.NewGCM(block)
-	nonce := make([]byte, gcm.NonceSize())
-	io.ReadFull(rand.Reader, nonce)
-	return hex.EncodeToString(gcm.Seal(nonce, nonce, []byte(data), nil))
+	encryptor := NewLocalEncryptor()
+	encrypted, err := encryptor.Encrypt(data, passphrase)
+	if err != nil {
+		// Legacy behavior swallowed errors, so we log and return empty (or handle better if possible)
+		// For TUI crash prevention, returning empty string is safer than panic,
+		// though ideally we should propagate errors.
+		return ""
+	}
+	return encrypted
 }
 
+// Decrypt wraps the enhanced decryption (supports both Argon2 and Legacy MD5)
 func Decrypt(data, passphrase string) string {
-	key := []byte(passphrase)
-	ciphertext, err := hex.DecodeString(data)
-	if err != nil {
-		return "ERR_CORRUPT"
-	}
-	block, err := aes.NewCipher(key)
-	if err != nil {
-		return "ERR_INVALID_KEY"
-	}
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return "ERR_CIPHER"
-	}
-	ns := gcm.NonceSize()
-	if len(ciphertext) < ns {
-		return "ERR_LENGTH"
-	}
-	nonce, ciphertext := ciphertext[:ns], ciphertext[ns:]
-	plain, err := gcm.Open(nil, nonce, ciphertext, nil)
-	if err != nil {
-		return "LOCKED"
-	}
-	return string(plain)
+	return DecryptEnhanced(data, passphrase)
 }

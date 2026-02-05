@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"golang.org/x/crypto/argon2"
 )
@@ -27,10 +28,15 @@ func NewLocalEncryptor() *LocalEncryptor {
 	return &LocalEncryptor{}
 }
 
-// Encrypt implements domain.Encryptor
 func (e *LocalEncryptor) Encrypt(plaintext, passphrase string) (string, error) {
-	// Derive AES key from passphrase using Argon2
-	key := deriveKey(passphrase)
+	// 1. Get/Create local salt
+	salt, err := GetOrCreateSalt()
+	if err != nil {
+		return "", fmt.Errorf("failed to get salt: %w", err)
+	}
+
+	// 2. Derive key using this salt
+	key := deriveKey(passphrase, salt)
 
 	block, err := aes.NewCipher(key)
 	if err != nil {
@@ -48,14 +54,42 @@ func (e *LocalEncryptor) Encrypt(plaintext, passphrase string) (string, error) {
 	}
 
 	ciphertext := gcm.Seal(nonce, nonce, []byte(plaintext), nil)
-	return hex.EncodeToString(ciphertext), nil
+
+	// 3. Format: <hex_salt>:<hex_ciphertext>
+	// This makes the secret portable across machines
+	return hex.EncodeToString(salt) + ":" + hex.EncodeToString(ciphertext), nil
 }
 
-// Decrypt implements domain.Encryptor
 func (e *LocalEncryptor) Decrypt(ciphertextHex, passphrase string) (string, error) {
-	key := deriveKey(passphrase)
+	var salt []byte
+	var actualCiphertextHex string
 
-	ciphertext, err := hex.DecodeString(ciphertextHex)
+	// 1. Check if the ciphertext has a portable salt prefix (格式: salt:ciphertext)
+	if strings.Contains(ciphertextHex, ":") {
+		parts := strings.Split(ciphertextHex, ":")
+		if len(parts) == 2 {
+			s, err := hex.DecodeString(parts[0])
+			if err == nil {
+				salt = s
+				actualCiphertextHex = parts[1]
+			}
+		}
+	}
+
+	// 2. Fallback to local machine salt if no portable salt is found (backward compatibility)
+	if salt == nil {
+		s, err := GetOrCreateSalt()
+		if err != nil {
+			return "", fmt.Errorf("failed to get local salt: %w", err)
+		}
+		salt = s
+		actualCiphertextHex = ciphertextHex
+	}
+
+	// 3. Derive key and decrypt
+	key := deriveKey(passphrase, salt)
+
+	ciphertext, err := hex.DecodeString(actualCiphertextHex)
 	if err != nil {
 		return "", ErrInvalidCiphertext
 	}
@@ -84,20 +118,11 @@ func (e *LocalEncryptor) Decrypt(ciphertextHex, passphrase string) (string, erro
 	return string(plaintext), nil
 }
 
-// deriveKey derives a 32-byte AES key from a passphrase using Argon2
-func deriveKey(passphrase string) []byte {
-	// Get or create user-specific salt
-	// This prevents rainbow table attacks and ensures each user has unique encryption keys
-	salt, err := GetOrCreateSalt()
-	if err != nil {
-		// In production, this should return an error instead of panic
-		// For now, maintain backward compatibility with existing behavior
-		panic(fmt.Sprintf("Failed to get salt: %v", err))
-	}
-
+// deriveKey derives a 32-byte AES key from a passphrase and salt using Argon2
+func deriveKey(passphrase string, salt []byte) []byte {
 	return argon2.IDKey(
 		[]byte(passphrase),
-		salt,    // ✓ User-specific salt (stored in ~/.keyopol/salt)
+		salt,
 		1,       // time parameter (iterations)
 		64*1024, // memory parameter (64 MB)
 		4,       // parallelism parameter

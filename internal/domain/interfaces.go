@@ -65,8 +65,8 @@ type KMSProvider interface {
 
 // Project represents a project grouping
 type Project struct {
-	ID   int64
-	Name string
+	ID   int64  `json:"id"`
+	Name string `json:"name"`
 }
 
 // ProjectStore defines operations for project management

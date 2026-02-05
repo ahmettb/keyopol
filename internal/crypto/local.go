@@ -86,14 +86,18 @@ func (e *LocalEncryptor) Decrypt(ciphertextHex, passphrase string) (string, erro
 
 // deriveKey derives a 32-byte AES key from a passphrase using Argon2
 func deriveKey(passphrase string) []byte {
-	// Use Argon2id with reasonable parameters
-	// Salt should ideally be stored per-user, but for MVP we use a fixed salt
-	// TODO: Store salt per installation in config
-	salt := []byte("keyopol-v1-salt-change-in-prod")
+	// Get or create user-specific salt
+	// This prevents rainbow table attacks and ensures each user has unique encryption keys
+	salt, err := GetOrCreateSalt()
+	if err != nil {
+		// In production, this should return an error instead of panic
+		// For now, maintain backward compatibility with existing behavior
+		panic(fmt.Sprintf("Failed to get salt: %v", err))
+	}
 
 	return argon2.IDKey(
 		[]byte(passphrase),
-		salt,
+		salt,    // ✓ User-specific salt (stored in ~/.keyopol/salt)
 		1,       // time parameter (iterations)
 		64*1024, // memory parameter (64 MB)
 		4,       // parallelism parameter
@@ -101,15 +105,20 @@ func deriveKey(passphrase string) []byte {
 	)
 }
 
-// GetMasterKey retrieves the master password from environment or prompts user
+// GetMasterKey retrieves the master password securely.
+// Priority:
+// 1. Environment variable KEYOPOL_MASTER_KEY (for CI/CD)
+// 2. Terminal prompt (secure, interactive)
 func GetMasterKey() string {
-	key := os.Getenv("KEYOPOL_MASTER_KEY")
-	if key == "" {
-		// In production, this should prompt the user
-		// For now, return a default for backward compatibility
-		key = "default-insecure-key-change-me"
+	password, err := GetMasterPasswordSecure()
+	if err != nil {
+		// Fallback to default only for backward compatibility
+		// TODO: Remove this in future versions
+		fmt.Fprintf(os.Stderr, "Warning: Failed to get master password: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Using default password. This is INSECURE!\n")
+		return "default-insecure-key-change-me"
 	}
-	return key
+	return password
 }
 
 // Legacy functions for backward compatibility with existing code

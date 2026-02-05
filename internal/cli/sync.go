@@ -98,23 +98,25 @@ func NewPullCommand() *cobra.Command {
 		environment  string
 		scope        string
 		conflictMode string
+		skipValidate bool // Skip decryption validation (faster but less safe)
 	)
 
 	cmd := &cobra.Command{
 		Use:   "pull cloud",
 		Short: "Pull secrets from cloud storage",
 		Long: `Pull encrypted secrets from cloud storage (AWS Secrets Manager).
-Secrets are downloaded in encrypted form and stored locally.`,
+Personal secrets are validated for decryption with your master password.
+Shared secrets are stored locally for reference (require KMS access to decrypt).`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Check if cloud is enabled
 			if !cloud.IsCloudEnabled() {
 				return fmt.Errorf("cloud sync is not enabled. Run: keyopol cloud enable aws")
 			}
 
-			// Check master key
-			masterKey := crypto.GetMasterKey()
-			if masterKey == "" {
-				return fmt.Errorf("master key not found. Set KEYOPOL_MASTER_KEY environment variable")
+			// ✓ Get master password securely (for personal secret validation)
+			masterKey, err := crypto.GetMasterPasswordSecure()
+			if err != nil {
+				return fmt.Errorf("failed to get master password: %w", err)
 			}
 
 			// Initialize stores
@@ -163,9 +165,11 @@ Secrets are downloaded in encrypted form and stored locally.`,
 				}
 			}
 
-			// Pull secrets
-			engine := sync.NewPullEngine(localStore, cloudStore)
-			result, err := engine.Pull(context.Background(), filter, mode)
+			// ✓ Use EncryptionAwarePullEngine for decryption validation
+			engine := sync.NewEncryptionAwarePullEngine(localStore, cloudStore, masterKey)
+			validateDecryption := !skipValidate
+
+			result, err := engine.Pull(context.Background(), filter, mode, validateDecryption)
 			if err != nil {
 				return fmt.Errorf("pull failed: %w", err)
 			}
@@ -178,6 +182,10 @@ Secrets are downloaded in encrypted form and stored locally.`,
 				fmt.Printf("\n✓ Successfully pulled %d secret(s) from AWS\n", totalSynced)
 			}
 
+			if result.SkippedSecrets > 0 {
+				fmt.Printf("\n⚠ Skipped %d secret(s) - check errors above\n", result.SkippedSecrets)
+			}
+
 			return nil
 		},
 	}
@@ -186,6 +194,7 @@ Secrets are downloaded in encrypted form and stored locally.`,
 	cmd.Flags().StringVar(&environment, "env", "", "Filter by environment")
 	cmd.Flags().StringVar(&scope, "scope", "", "Filter by scope")
 	cmd.Flags().StringVar(&conflictMode, "conflict", "newest", "Conflict resolution: cloud, local, or newest")
+	cmd.Flags().BoolVar(&skipValidate, "skip-validation", false, "Skip decryption validation (faster but less safe)")
 
 	return cmd
 }

@@ -150,14 +150,34 @@ graph TD
 
 ## 📋 Commands Reference
 
-| Command | Description |
-|---------|-------------|
-| `keyopol` | Launch the Interactive TUI |
-| `keyopol run` | Execute command with secrets injected |
-| `keyopol secret add` | Add a new secret (Personal or Shared) |
-| `keyopol cloud enable` | Configure cloud provider |
-| `keyopol push cloud` | Upload encrypted secrets to AWS |
-| `keyopol pull cloud` | Download secrets from AWS |
+| Command | Description | Example |
+|---------|-------------|---------|
+| `keyopol` | Launch the Interactive TUI | `keyopol` |
+| `keyopol run` | Execute command with secrets injected | `keyopol run --project myapp -- npm start` |
+| `keyopol secret add` | Add a new secret (Personal or Shared) | `keyopol secret add --project myapp --key API_KEY --value "xyz" [--shared]` |
+| `keyopol get` | **NEW** Get and decrypt a secret | `keyopol get API_KEY --project myapp --show-value` |
+| `keyopol secret list` | List secrets | `keyopol secret list --project myapp` |
+| `keyopol cloud enable` | Configure cloud provider | `keyopol cloud enable aws --region us-east-1` |
+| `keyopol cloud status` | Show cloud configuration | `keyopol cloud status` |
+| `keyopol push cloud` | Upload encrypted secrets to AWS | `keyopol push cloud --project myapp` |
+| `keyopol pull cloud` | **IMPROVED** Download & validate secrets from AWS | `keyopol pull cloud --project myapp` |
+
+### 🔒 Security Notes
+
+**Master Password:**
+- Prompted from terminal (echo disabled) ✓
+- Falls back to `KEYOPOL_MASTER_KEY` env var for CI/CD
+- **NEVER** stored on disk
+
+**Encryption:**
+- **Personal Secrets:** AES-256-GCM + Argon2id with unique salt per installation
+- **Shared Secrets:** AWS KMS Envelope Encryption (unlimited size)
+- Salt auto-generated on first use: `~/.keyopol/salt`
+
+**Cloud Security:**
+- AWS never sees plaintext secrets (zero-knowledge for personal)
+- Envelope encryption for shared secrets (KMS best practice)
+- Pull validates decryption with current master password
 
 ---
 
@@ -182,6 +202,28 @@ To allow a developer to access shared secrets for a specific project:
         }
     ]
 }
+```
+
+---
+
+## 🌐 Web Dashboard
+
+Keyopol now includes a modern web-based dashboard for managing your projects and secrets.
+
+### 1. Start the API Server
+First, run the backend server which exposes a REST API:
+```bash
+keyopol serve
+# Server runs on http://localhost:8080
+```
+
+### 2. Start the Frontend
+Navigate to the `frontend-keyopol` directory and start the React application:
+```bash
+cd frontend-keyopol
+npm install # Only for first time setup
+npm start
+# Dashboard opens at http://localhost:3000
 ```
 
 ---

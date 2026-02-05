@@ -443,8 +443,17 @@ func (a *Adapter) buildSelectQuery(filter domain.Filter, limitOne bool) (string,
 // ProjectStore implementation
 
 func (a *Adapter) CreateProject(ctx context.Context, name string) error {
-	_, err := a.db.ExecContext(ctx, "INSERT OR IGNORE INTO projects (name) VALUES (?)", name)
+	_, err := a.db.ExecContext(ctx, "INSERT INTO projects (name) VALUES (?)", name)
 	return err
+}
+
+func (a *Adapter) GetProject(ctx context.Context, name string) (*domain.Project, error) {
+	var p domain.Project
+	err := a.db.QueryRowContext(ctx, "SELECT id, name FROM projects WHERE name = ?", name).Scan(&p.ID, &p.Name)
+	if err == sql.ErrNoRows {
+		return nil, fmt.Errorf("project not found: %s", name)
+	}
+	return &p, err
 }
 
 func (a *Adapter) ListProjects(ctx context.Context) ([]*domain.Project, error) {

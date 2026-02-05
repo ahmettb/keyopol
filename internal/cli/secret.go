@@ -149,10 +149,11 @@ func addSharedSecret(ctx context.Context, store *sqlite.Adapter, project, enviro
 		return fmt.Errorf("failed to initialize KMS: %w", err)
 	}
 
-	// Encrypt with KMS
-	encryptedValue, err := kmsClient.EncryptWithKMS(ctx, []byte(value), "")
+	// ✓ Use ENVELOPE ENCRYPTION instead of direct KMS
+	// This allows secrets >4KB and reduces KMS API calls
+	envelopeJSON, err := crypto.EncryptWithEnvelope(ctx, value, kmsClient, awsSettings.KMSKeyID)
 	if err != nil {
-		return fmt.Errorf("KMS encryption failed: %w", err)
+		return fmt.Errorf("envelope encryption failed: %w", err)
 	}
 
 	// Store encrypted value in AWS Secrets Manager
@@ -166,7 +167,7 @@ func addSharedSecret(ctx context.Context, store *sqlite.Adapter, project, enviro
 		Environment: environment,
 		Scope:       scope,
 		Key:         key,
-		Value:       string(encryptedValue),
+		Value:       envelopeJSON, // ✓ Store envelope-encrypted value
 		IsShared:    true,
 		CloudSynced: true,
 		CreatedAt:   time.Now(),
@@ -178,16 +179,17 @@ func addSharedSecret(ctx context.Context, store *sqlite.Adapter, project, enviro
 		return fmt.Errorf("failed to push to AWS: %w", err)
 	}
 
-	// Store metadata locally (without value)
-	secret.Value = "" // Don't store KMS-encrypted value locally
+	// Store metadata locally (optionally store envelope for offline reference)
+	// For shared secrets, we CAN store the envelope locally since decryption requires KMS access
 	if err := store.Create(ctx, secret); err != nil {
 		return fmt.Errorf("failed to create local metadata: %w", err)
 	}
 
-	fmt.Printf("✓ Shared secret added (KMS): %s\n", secret.CloudPath())
-	fmt.Println("  Encrypted with AWS KMS")
+	fmt.Printf("✓ Shared secret added (KMS Envelope Encryption): %s\n", secret.CloudPath())
+	fmt.Println("  Encrypted with AWS KMS (Envelope Encryption)")
 	fmt.Println("  Stored in AWS Secrets Manager")
 	fmt.Println("  Access controlled by IAM policies")
+	fmt.Printf("  Data encrypted with AES-256-GCM, key encrypted with KMS\n")
 
 	return nil
 }

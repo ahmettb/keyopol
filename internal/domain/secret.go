@@ -5,28 +5,28 @@ import "time"
 // Secret represents a secret value with its metadata and scope
 type Secret struct {
 	// Core fields
-	ID    int64
-	Key   string
-	Value string // Encrypted or plaintext depending on context
+	ID    int64  `json:"id"`
+	Key   string `json:"key"`
+	Value string `json:"value"` // Encrypted or plaintext depending on context
 
 	// Hierarchical scoping
-	Project     string
-	Environment string // e.g., dev, staging, prod
-	Scope       string // Optional sub-category (e.g., database, api, oauth)
+	Project     string `json:"project"`
+	Environment string `json:"environment"` // e.g., dev, staging, prod
+	Scope       string `json:"scope"`       // Optional sub-category (e.g., database, api, oauth)
 
 	// Secret type
-	IsShared bool // True if encrypted with KMS, false if local master password
+	IsShared bool `json:"isShared"` // True if encrypted with KMS, false if local master password
 
 	// Cloud sync metadata
-	CloudSynced bool      // True if pushed to cloud
-	LastSyncAt  time.Time // Last cloud sync timestamp
+	CloudSynced bool      `json:"cloudSynced"` // True if pushed to cloud
+	LastSyncAt  time.Time `json:"lastSyncAt"`  // Last cloud sync timestamp
 
 	// UI state (transient)
-	IsVisible bool // For TUI visibility toggle
+	IsVisible bool `json:"isVisible"` // For TUI visibility toggle
 
 	// Timestamps
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
 }
 
 // Path returns the hierarchical path of the secret

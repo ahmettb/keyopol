@@ -39,20 +39,13 @@ func main() {
 		},
 	})
 
-	rootCmd.AddCommand(&cobra.Command{
-		Use:   "get [project] [key]",
-		Short: "Get a single secret value",
-		Args:  cobra.ExactArgs(2),
-		Run: func(cmd *cobra.Command, args []string) {
-			runner.Get()
-		},
-	})
-
 	// New cloud commands
 	rootCmd.AddCommand(cli.NewCloudCommand())
 	rootCmd.AddCommand(cli.NewPushCommand())
 	rootCmd.AddCommand(cli.NewPullCommand())
 	rootCmd.AddCommand(cli.NewSecretCommand())
+	rootCmd.AddCommand(cli.NewGetCommand()) // ✓ New secure get command
+	rootCmd.AddCommand(cli.NewServeCommand())
 
 	// Execute
 	if err := rootCmd.Execute(); err != nil {
